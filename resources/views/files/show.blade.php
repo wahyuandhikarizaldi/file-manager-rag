@@ -16,7 +16,7 @@
 
         <div class="border rounded-lg overflow-hidden shadow-sm mb-6">
             <iframe 
-                src="{{ route('files.view', $file->id) }}" 
+                src="{{ env('SUPABASE_URL') }}/storage/v1/object/public/{{ $file->path }}" 
                 class="w-full h-[600px] border-0"
                 allowfullscreen>
             </iframe>

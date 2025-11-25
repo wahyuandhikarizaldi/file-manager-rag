@@ -6,6 +6,8 @@ use App\Models\File;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
 
 class FileController extends Controller
 {
@@ -21,36 +23,67 @@ class FileController extends Controller
     }
 
     public function store(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|mimes:pdf|max:2048',
-            'description' => 'nullable|string',
+{
+    $request->validate([
+        'file' => 'required|mimes:pdf|max:2048',
+        'description' => 'nullable|string',
+    ]);
+
+    $uploadedFile = $request->file('file');
+    $filename = $uploadedFile->getClientOriginalName();
+
+    // Simpan ke storage lokal (seperti biasa)
+    $path = $uploadedFile->storeAs('files', $filename, 'public');
+
+    // === Upload ke Supabase ===
+    $supabaseUrl = env('SUPABASE_URL'); // contoh: https://jlfykwabronlkbnzywhk.supabase.co
+    $supabaseKey = env('SUPABASE_SERVICE_ROLE'); // gunakan SERVICE ROLE KEY, bukan anon key
+    $bucket = 'files';
+
+    $fileContent = file_get_contents(storage_path('app/public/' . $path));
+
+    $uploadUrl = "$supabaseUrl/storage/v1/object/$bucket/$filename";
+
+    $response = Http::withHeaders([
+        'Authorization' => 'Bearer ' . $supabaseKey,
+        'apikey' => $supabaseKey,
+        'Content-Type' => 'application/pdf', // pastikan tipe file sesuai
+    ])->send('POST', $uploadUrl, [
+        'body' => $fileContent, // KUNCI UTAMA: pakai "body" murni, bukan attach()
+    ]);
+
+    if ($response->failed()) {
+        \Log::error('❌ Error Supabase upload', [
+            'status' => $response->status(),
+            'body' => $response->body(),
         ]);
-
-        $uploadedFile = $request->file('file');
-        $filename = $uploadedFile->getClientOriginalName();
-        $path = $uploadedFile->storeAs('files', $filename, 'public');
-
-        $file = File::create([
-            'name' => $filename,
-            'path' => $path,
-            'description' => $request->description,
-            'upload_date' => now(),
+    } else {
+        \Log::info('✅ File uploaded to Supabase', [
+            'response' => $response->body(),
         ]);
-
-        // === Kirim file ke FastAPI untuk diindex ke ChromaDB ===
-        $fastapiUrl = 'http://127.0.0.1:5000/upload';
-        $response = Http::attach(
-            'file', file_get_contents(storage_path('app/public/' . $path)), $filename
-        )->post($fastapiUrl);
-
-        if ($response->failed()) {
-            return redirect()->route('files.index')
-                ->with('error', 'File diupload ke server, tapi gagal diindex ke AI.');
-        }
-
-        return redirect()->route('files.index')->with('success', 'File berhasil diupload & diindex.');
     }
+
+    // Simpan metadata ke SQLite
+    $file = File::create([
+        'name' => $filename,
+        'path' => $path,
+        'description' => $request->description,
+        'upload_date' => now(),
+    ]);
+
+    // === Kirim file ke FastAPI untuk diindex ke ChromaDB ===
+    $fastapiUrl = 'http://127.0.0.1:5000/upload';
+    $response = Http::attach(
+        'file', file_get_contents(storage_path('app/public/' . $path)), $filename
+    )->post($fastapiUrl);
+
+    if ($response->failed()) {
+        return redirect()->route('files.index')
+            ->with('error', 'File diupload ke server, tapi gagal diindex ke AI.');
+    }
+
+    return redirect()->route('files.index')->with('success', 'File berhasil diupload & diindex.');
+}
 
 
     public function show(File $file)
@@ -78,39 +111,63 @@ class FileController extends Controller
 
     public function destroy(File $file)
     {
-        // Hapus dari storage lokal
-        Storage::disk('public')->delete($file->path);
         $filename = basename($file->path);
-        $file->delete();
 
-        // === Hapus juga di ChromaDB (FastAPI) ===
-        $fastapiUrl = 'http://127.0.0.1:5000/delete';
-        $response = Http::asForm()->delete($fastapiUrl, [
-            'filename' => $filename,
-        ]);
+        // === 1️⃣ Hapus dari storage lokal ===
+        Storage::disk('public')->delete($file->path);
 
-        if ($response->failed()) {
-            return redirect()->route('files.index')
-                ->with('error', 'File dihapus di sistem, tapi gagal dihapus dari AI DB.');
+        // === 2️⃣ Hapus dari Supabase Storage ===
+        try {
+            $supabaseUrl = env('SUPABASE_URL');
+            $supabaseKey = env('SUPABASE_SERVICE_ROLE');
+            $bucket = 'files';
+            $deleteUrl = "$supabaseUrl/storage/v1/object/$bucket/$filename";
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer $supabaseKey",
+            ])->delete($deleteUrl);
+
+            if ($response->failed()) {
+                Log::error('❌ Gagal hapus file dari Supabase:', ['response' => $response->body()]);
+            }
+        } catch (\Exception $e) {
+            Log::error('❌ Error hapus dari Supabase:', ['message' => $e->getMessage()]);
         }
 
-        return redirect()->route('files.index')->with('success', 'File dihapus dari sistem & AI DB.');
+        // === 3️⃣ Hapus dari FastAPI (ChromaDB) ===
+        try {
+            $fastapiUrl = env('FASTAPI_URL', 'http://127.0.0.1:5000') . '/delete';
+            $response = Http::asForm()->delete($fastapiUrl, [
+                'filename' => $filename,
+            ]);
+
+            if ($response->failed()) {
+                Log::error('❌ Gagal hapus dari FastAPI:', ['response' => $response->body()]);
+            }
+        } catch (\Exception $e) {
+            Log::error('❌ Error hapus dari FastAPI:', ['message' => $e->getMessage()]);
+        }
+
+        // === 4️⃣ Hapus dari database ===
+        $file->delete();
+
+        return redirect()->route('files.index')->with('success', '🗑️ File berhasil dihapus dari sistem, Supabase, dan AI DB.');
     }
 
     public function viewPdf(File $file)
     {
-        $path = storage_path('app/public/' . $file->path);
+        // Jika kamu menyimpan path Supabase di kolom `path`
+        // misalnya: 'files/ATS WAHYU.pdf'
+        // maka kita tinggal buat URL publik Supabase
 
-        if (!file_exists($path)) {
-            abort(404, 'File tidak ditemukan.');
-        }
+        $supabaseUrl = env('SUPABASE_URL'); // pastikan di .env sudah ada
+        $publicPath = $file->path; // contoh: 'files/ATS WAHYU.pdf'
 
-        return response()->file($path, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $file->name . '"',
-            'X-Frame-Options' => 'ALLOWALL',   // <--- ini penting
-        ]);
+        // Bangun URL publiknya
+        $publicUrl = "{$supabaseUrl}/storage/v1/object/public/{$publicPath}";
+
+        // Redirect ke file publik agar iframe bisa render PDF langsung
+        return redirect()->away($publicUrl);
     }
-    
 
 }
