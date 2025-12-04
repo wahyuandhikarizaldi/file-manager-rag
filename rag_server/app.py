@@ -190,8 +190,6 @@ async def upload_file(file: UploadFile = FastAPIFile(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-
-
 @app.delete("/delete")
 async def delete_file(filename: str = Form(...)):
     """Sinkronisasi ulang Chroma secara manual"""
