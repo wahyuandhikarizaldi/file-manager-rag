@@ -65,6 +65,7 @@ def rebuild_vectorstore():
 
     # === Tambahkan atau update file baru ===
     new_or_updated = []
+    
     for src in current_sources:
         file_path = os.path.join(PDF_FOLDER, src)
 
@@ -102,7 +103,32 @@ def rebuild_vectorstore():
 
     # === Split dan simpan ke DB jika ada file baru/diupdate ===
     if new_or_updated:
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        
+        # === 2.1 Hitung Dynamic Chunk Size ===
+        total_chars = sum([len(d.page_content) for d in new_or_updated])
+        total_pages = len(new_or_updated)
+
+        avg_chars_per_page = total_chars / max(total_pages, 1)
+        print(f"Avg chars per page = {avg_chars_per_page:.0f}")
+
+        # rule dinamis
+        if avg_chars_per_page < 1500:
+            chunk_size = 500
+        elif avg_chars_per_page < 3000:
+            chunk_size = 800
+        elif avg_chars_per_page < 6000:
+            chunk_size = 1200
+        else:
+            chunk_size = 1800
+
+        chunk_overlap = int(chunk_size * 0.2)  # overlap = 20% dari chunk size
+
+        print(f"Dynamic ch unk_size = {chunk_size}, overlap = {chunk_overlap}")
+        
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
         texts = splitter.split_documents(new_or_updated)
         vectorstore.add_documents(texts)
         vectorstore.persist()
@@ -111,8 +137,6 @@ def rebuild_vectorstore():
         print("✅ Tidak ada perubahan, semua dokumen sudah sinkron.")
 
     return vectorstore
-
-
 
 def get_qa_chain():
     """Bangun chain QA"""
