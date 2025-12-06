@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload File PDF</title>
+    <title>Upload File</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
 
     <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
-        <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">📄 Upload File PDF</h1>
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">📄 Upload File</h1>
 
         @if (session('success'))
             <div class="bg-green-100 text-green-700 p-3 rounded mb-4">

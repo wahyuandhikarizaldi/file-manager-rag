@@ -25,9 +25,10 @@ class FileController extends Controller
     public function store(Request $request)
 {
     $request->validate([
-        'file' => 'required|mimes:pdf|max:2048',
+        'file' => 'required|mimes:pdf,doc,docx,ppt,pptx,xls,xlsx,txt,md,html,htm,json,csv,sql|max:512000',
         'description' => 'nullable|string',
     ]);
+    
 
     $uploadedFile = $request->file('file');
     $filename = $uploadedFile->getClientOriginalName();
@@ -44,12 +45,14 @@ class FileController extends Controller
 
     $uploadUrl = "$supabaseUrl/storage/v1/object/$bucket/$filename";
 
+    $fileMime = $uploadedFile->getMimeType();
+
     $response = Http::withHeaders([
         'Authorization' => 'Bearer ' . $supabaseKey,
         'apikey' => $supabaseKey,
-        'Content-Type' => 'application/pdf', // pastikan tipe file sesuai
+        'Content-Type' => $fileMime, // otomatis sesuai file
     ])->send('POST', $uploadUrl, [
-        'body' => $fileContent, // KUNCI UTAMA: pakai "body" murni, bukan attach()
+        'body' => $fileContent,
     ]);
 
     if ($response->failed()) {

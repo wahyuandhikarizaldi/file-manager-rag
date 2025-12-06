@@ -58,27 +58,85 @@
       </div>
     @endif
 
+    <!-- Filter & Search -->
+    <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
+      <!-- Filter Tipe File -->
+      <div>
+        <label for="filterType" class="mr-2 font-medium">Filter Tipe:</label>
+        <select id="filterType" class="border border-gray-300 rounded px-2 py-1" onchange="filterFiles()">
+          <option value="">Semua</option>
+          <option value="pdf">PDF</option>
+          <option value="doc">DOC/DOCX</option>
+          <option value="xls">XLS/XLSX</option>
+          <option value="ppt">PPT/PPTX</option>
+          <option value="other">Lainnya</option>
+        </select>
+      </div>
+
+      <!-- Filter Tanggal Upload -->
+      <div class="flex items-center gap-2">
+        <label class="font-medium">Dari:</label>
+        <input type="date" id="dateFrom" class="border border-gray-300 rounded px-2 py-1" onchange="filterFiles()">
+        <label class="font-medium">Sampai:</label>
+        <input type="date" id="dateTo" class="border border-gray-300 rounded px-2 py-1" onchange="filterFiles()">
+      </div>
+
+      <!-- Search Nama File -->
+      <div>
+        <input type="text" id="searchName" placeholder="Cari nama file..."
+          class="border border-gray-300 rounded px-2 py-1" onkeyup="filterFiles()">
+      </div>
+    </div>
+
+
     <!-- Tabel daftar file -->
     <div class="overflow-x-auto bg-white shadow-lg rounded-lg">
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-gray-100 text-gray-700">
-            <th class="py-3 px-4">Nama File</th>
-            <th class="py-3 px-4">Tanggal Upload</th>
+            <th class="py-3 px-4 cursor-pointer" onclick="sortTable(0)">Tipe ⬍</th>
+            <th class="py-3 px-4 cursor-pointer" onclick="sortTable(1)">Nama File ⬍</th>
+            <th class="py-3 px-4 cursor-pointer" onclick="sortTable(2)">Tanggal Upload ⬍</th>
             <th class="py-3 px-4">Deskripsi</th>
             <th class="py-3 px-4 text-center">Aksi</th>
           </tr>
         </thead>
         <tbody>
           @foreach ($files as $file)
+            @php
+              $ext = strtolower(pathinfo($file->name, PATHINFO_EXTENSION));
+              // Badge warna
+              $badgeColor = match($ext) {
+                  'pdf' => 'bg-red-100 text-red-700',
+                  'doc', 'docx' => 'bg-blue-100 text-blue-700',
+                  'xls', 'xlsx' => 'bg-green-100 text-green-700',
+                  'ppt', 'pptx' => 'bg-yellow-100 text-yellow-700',
+                  default => 'bg-gray-100 text-gray-700',
+              };
+            @endphp
+
             <tr class="border-b hover:bg-gray-50">
+              <!-- Kolom Tipe File -->
+              <td class="py-3 px-4">
+                <span class="px-2 py-1 text-xs font-semibold rounded {{ $badgeColor }}">
+                  {{ strtoupper($ext) }}
+                </span>
+              </td>
+
+              <!-- Kolom Nama File -->
               <td class="py-3 px-4 font-medium text-blue-600">
                 <a href="{{ route('files.show', $file->id) }}" class="hover:underline">
                   {{ $file->name }}
                 </a>
               </td>
+
+              <!-- Tanggal Upload -->
               <td class="py-3 px-4">{{ $file->upload_date }}</td>
+
+              <!-- Deskripsi -->
               <td class="py-3 px-4">{{ $file->description }}</td>
+
+              <!-- Aksi -->
               <td class="py-3 px-4 text-center">
                 <a href="{{ route('files.edit', $file->id) }}" class="text-yellow-600 hover:text-yellow-800">Edit</a>
                 <span class="mx-2 text-gray-400">|</span>
@@ -93,6 +151,7 @@
         </tbody>
       </table>
     </div>
+
   </div>
 
   <!-- Floating Button -->
@@ -140,6 +199,55 @@
 
   <!-- Script -->
   <script>
+    const table = document.querySelector('table tbody');
+
+    function filterFiles() {
+    const type = document.getElementById('filterType').value.toLowerCase();
+    const search = document.getElementById('searchName').value.toLowerCase();
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+
+    Array.from(table.rows).forEach(row => {
+      const ext = row.cells[0].innerText.toLowerCase();
+      const name = row.cells[1].innerText.toLowerCase();
+      const date = row.cells[2].innerText; // kolom tanggal upload
+
+      // Filter tipe file
+      const matchType = !type || 
+                        (type === 'other' && !['pdf','doc','docx','xls','xlsx','ppt','pptx'].includes(ext)) ||
+                        ext.includes(type);
+
+      // Filter nama file
+      const matchName = !search || name.includes(search);
+
+      // Filter tanggal
+      const rowDateTimeStr = row.cells[2].innerText; // "2025-12-06 04:35:35"
+      const rowDateObj = new Date(rowDateTimeStr); // JS Date object
+
+      const fromDateObj = dateFrom ? new Date(dateFrom) : null;
+      const toDateObj = dateTo ? new Date(dateTo) : null;
+
+      let matchDate = true;
+      if (fromDateObj && rowDateObj < fromDateObj) matchDate = false;
+      if (toDateObj && rowDateObj > toDateObj) matchDate = false;
+
+
+      row.style.display = (matchType && matchName && matchDate) ? '' : 'none';
+    });
+  }
+
+    function sortTable(colIndex) {
+      const rows = Array.from(table.rows);
+      const asc = table.getAttribute('data-sort-asc') === 'true';
+      rows.sort((a, b) => {
+        const aText = a.cells[colIndex].innerText.toLowerCase();
+        const bText = b.cells[colIndex].innerText.toLowerCase();
+        return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+      });
+      rows.forEach(r => table.appendChild(r));
+      table.setAttribute('data-sort-asc', !asc);
+    }
+
     const openBtn = document.getElementById('openAsk');
     const closeBtn = document.getElementById('closeAsk');
     const windowBox = document.getElementById('askWindow');
