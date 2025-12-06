@@ -1,0 +1,16 @@
+# === Core Google AI + LangChain ===
+google-genai==1.7.0
+langchain
+langchain-google-genai
+chromadb==0.6.3
+
+# === PDF & Environment Tools ===
+pypdf
+python-dotenv
+
+# === Compatibility (avoid protobuf conflicts) ===
+protobuf==4.25.3
+
+# === Optional Utilities ===
+pandas
+numpy
